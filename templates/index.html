@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Speech Translator</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      button {
+        margin: 10px 0;
+      }
+      #result {
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Speech Translator</h1>
+    <div>
+      <label for="language">Select target language:</label>
+      <select id="language" name="language">
+        {% for lang, code in languages.items() %}
+        <option value="{{ lang }}">{{ lang }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <button id="startRecording">Start Recording</button>
+      <button id="stopRecording" disabled>Stop Recording</button>
+    </div>
+    <div id="result"></div>
+    <audio id="audioPlayback" controls style="display: none"></audio>
+
+    <script src="https://cdn.rawgit.com/mattdiamond/Recorderjs/08e7abd9/dist/recorder.js"></script>
+    <script>
+      let audioContext;
+      let recorder;
+
+      const startRecordingButton = document.getElementById("startRecording");
+      const stopRecordingButton = document.getElementById("stopRecording");
+      const resultDiv = document.getElementById("result");
+      const audioPlayback = document.getElementById("audioPlayback");
+
+      startRecordingButton.onclick = startRecording;
+      stopRecordingButton.onclick = stopRecording;
+
+      async function startRecording() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          audioContext = new (window.AudioContext ||
+            window.webkitAudioContext)();
+          const input = audioContext.createMediaStreamSource(stream);
+          recorder = new Recorder(input, { numChannels: 1 });
+          recorder.record();
+
+          startRecordingButton.disabled = true;
+          stopRecordingButton.disabled = false;
+        } catch (error) {
+          console.error("Error accessing microphone:", error);
+          resultDiv.innerHTML = `Error: ${error.message}`;
+        }
+      }
+
+      function stopRecording() {
+        recorder.stop();
+        startRecordingButton.disabled = false;
+        stopRecordingButton.disabled = true;
+
+        recorder.exportWAV((blob) => {
+          const formData = new FormData();
+          formData.append("audio", blob, "recording.wav");
+          formData.append(
+            "language",
+            document.getElementById("language").value
+          );
+
+          translateAudio(formData);
+        });
+      }
+
+      async function translateAudio(formData) {
+        try {
+          const response = await fetch("/translate", {
+            method: "POST",
+            body: formData,
+          });
+
+          const data = await response.json();
+
+          if (data.error) {
+            resultDiv.innerHTML = `Error: ${data.error}`;
+          } else {
+            resultDiv.innerHTML = `
+                        <p><strong>Original Text:</strong> ${data.original_text}</p>
+                        <p><strong>Translated Text:</strong> ${data.translated_text}</p>
+                    `;
+            audioPlayback.src = `data:audio/mpeg;base64,${data.audio_output}`;
+            audioPlayback.style.display = "block";
+          }
+        } catch (error) {
+          resultDiv.innerHTML = `Error: ${error.message}`;
+        }
+      }
+    </script>
+  </body>
+</html>
